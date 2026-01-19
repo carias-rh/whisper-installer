@@ -1,0 +1,249 @@
+---
+# Tareas para compilar whisper.cpp desde código fuente
+# Usar cuando el CPU no soporta AVX (ej: Celeron, Atom antiguos)
+
+- name: Detectar distribución Linux
+  debug:
+    msg: "Sistema detectado: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+# === INSTALAR DEPENDENCIAS DE COMPILACIÓN ===
+
+- name: Instalar dependencias de compilación en Fedora/RHEL
+  become: true
+  dnf:
+    name:
+      - gcc-c++
+      - cmake
+      - git
+      - make
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Instalar dependencias de compilación en Debian/Ubuntu
+  become: true
+  block:
+    - name: Actualizar cache de apt
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Instalar paquetes de compilación
+      apt:
+        name:
+          - build-essential
+          - cmake
+          - git
+        state: present
+  when: ansible_os_family == "Debian"
+
+- name: Instalar dependencias de compilación en Arch Linux
+  become: true
+  community.general.pacman:
+    name:
+      - gcc
+      - cmake
+      - git
+      - make
+    state: present
+  when: ansible_os_family == "Archlinux"
+
+- name: Instalar dependencias de compilación en openSUSE
+  become: true
+  community.general.zypper:
+    name:
+      - gcc-c++
+      - cmake
+      - git
+      - make
+    state: present
+  when: ansible_os_family == "Suse"
+
+# === CREAR DIRECTORIOS ===
+
+- name: Crear directorio base de whisper
+  file:
+    path: "{{ whisper_base_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Crear directorio para modelos
+  file:
+    path: "{{ whisper_models_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Crear directorio para audio
+  file:
+    path: "{{ whisper_audio_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Crear directorio para transcripciones
+  file:
+    path: "{{ whisper_output_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Crear directorio de binarios del usuario
+  file:
+    path: "{{ whisper_bin_dir }}"
+    state: directory
+    mode: '0755'
+
+# === CLONAR O ACTUALIZAR REPOSITORIO ===
+
+- name: Verificar si ya existe el repositorio
+  stat:
+    path: "{{ whisper_source_dir }}"
+  register: repo_exists
+
+- name: Clonar repositorio whisper.cpp
+  git:
+    repo: "https://github.com/ggml-org/whisper.cpp.git"
+    dest: "{{ whisper_source_dir }}"
+    version: master
+    depth: 1
+  when: not repo_exists.stat.exists and not whisper_offline_mode | default(false)
+
+- name: Copiar código fuente desde USB (modo offline)
+  copy:
+    src: "{{ whisper_offline_source }}"
+    dest: "{{ whisper_user_home }}"
+    remote_src: yes
+  when: whisper_offline_mode | default(false) and not repo_exists.stat.exists
+
+# === COMPILAR WHISPER.CPP ===
+
+- name: Detectar soporte AVX
+  shell: grep -o 'avx[^ ]*' /proc/cpuinfo | head -1 || echo "none"
+  register: avx_support
+  changed_when: false
+
+- name: Mostrar soporte AVX detectado
+  debug:
+    msg: "Soporte AVX: {{ 'Sí' if avx_support.stdout != 'none' and avx_support.stdout != '' else 'No (compilando sin AVX)' }}"
+
+- name: Configurar CMake (con AVX)
+  command:
+    cmd: cmake -B build -DCMAKE_BUILD_TYPE=Release
+    chdir: "{{ whisper_source_dir }}"
+  when: avx_support.stdout != 'none' and avx_support.stdout != ''
+  register: cmake_config_avx
+
+- name: Configurar CMake (sin AVX - para CPUs antiguos)
+  command:
+    cmd: cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF
+    chdir: "{{ whisper_source_dir }}"
+  when: avx_support.stdout == 'none' or avx_support.stdout == ''
+  register: cmake_config_noavx
+
+- name: Compilar whisper.cpp
+  command:
+    cmd: cmake --build build --config Release -j{{ ansible_processor_vcpus | default(2) }}
+    chdir: "{{ whisper_source_dir }}"
+  register: build_result
+  changed_when: build_result.rc == 0
+
+- name: Verificar que el binario se compiló correctamente
+  stat:
+    path: "{{ whisper_source_dir }}/build/bin/whisper-cli"
+  register: binary_exists
+  failed_when: not binary_exists.stat.exists
+
+# === DESCARGAR MODELO ===
+
+- name: Verificar si el modelo por defecto ya existe
+  stat:
+    path: "{{ whisper_models_dir }}/ggml-{{ whisper_default_model }}.bin"
+  register: modelo_existe
+
+- name: Copiar modelo desde USB (modo offline)
+  copy:
+    src: "{{ whisper_offline_model }}"
+    dest: "{{ whisper_models_dir }}/ggml-{{ whisper_default_model }}.bin"
+    remote_src: yes
+  when: 
+    - whisper_offline_mode | default(false)
+    - not modelo_existe.stat.exists
+    - whisper_offline_model is defined
+
+- name: Descargar modelo por defecto (requiere internet)
+  command:
+    cmd: "./models/download-ggml-model.sh {{ whisper_default_model }} {{ whisper_models_dir }}"
+    chdir: "{{ whisper_source_dir }}"
+  when: 
+    - not modelo_existe.stat.exists
+    - not whisper_offline_mode | default(false)
+  register: descarga_modelo
+  changed_when: descarga_modelo.rc == 0
+
+# === INSTALAR SCRIPT WRAPPER ===
+
+- name: Instalar script wrapper de whisper (versión nativa)
+  template:
+    src: whisper-native.sh.j2
+    dest: "{{ whisper_bin_dir }}/whisper"
+    mode: '0755'
+
+- name: Crear enlace simbólico para whisper-transcribir
+  file:
+    src: "{{ whisper_bin_dir }}/whisper"
+    dest: "{{ whisper_bin_dir }}/whisper-transcribir"
+    state: link
+
+# === CONFIGURAR PATH ===
+
+- name: Verificar si PATH ya incluye .local/bin en .bashrc
+  shell: grep -q '\.local/bin' {{ whisper_user_home }}/.bashrc
+  register: path_check
+  ignore_errors: true
+  changed_when: false
+
+- name: Añadir .local/bin al PATH en .bashrc
+  lineinfile:
+    path: "{{ whisper_user_home }}/.bashrc"
+    line: 'export PATH="$HOME/.local/bin:$PATH"'
+    create: yes
+  when: path_check.rc != 0
+
+- name: Verificar si .zshrc existe
+  stat:
+    path: "{{ whisper_user_home }}/.zshrc"
+  register: zshrc_exists
+
+- name: Añadir .local/bin al PATH en .zshrc si existe
+  lineinfile:
+    path: "{{ whisper_user_home }}/.zshrc"
+    line: 'export PATH="$HOME/.local/bin:$PATH"'
+  when: zshrc_exists.stat.exists
+
+# === MENSAJE FINAL ===
+
+- name: Mostrar instrucciones de uso
+  debug:
+    msg: |
+      
+      ╔══════════════════════════════════════════════════════════════════╗
+      ║    ¡whisper.cpp compilado e instalado correctamente! 🎉         ║
+      ╠══════════════════════════════════════════════════════════════════╣
+      ║                                                                  ║
+      ║  MODO: Compilación nativa (sin contenedor)                       ║
+      ║  AVX:  {{ 'Habilitado' if (avx_support.stdout != 'none' and avx_support.stdout != '') else 'Deshabilitado (CPU compatible)' }}
+      ║                                                                  ║
+      ║  UBICACIONES:                                                    ║
+      ║  • Binario:        {{ whisper_source_dir }}/build/bin/whisper-cli
+      ║  • Modelos:        {{ whisper_models_dir }}
+      ║  • Transcripciones: {{ whisper_output_dir }}
+      ║                                                                  ║
+      ║  COMANDOS DISPONIBLES:                                           ║
+      ║  • whisper ayuda         - Ver ayuda completa                    ║
+      ║  • whisper transcribir   - Transcribir un archivo de audio       ║
+      ║  • whisper modelos       - Gestionar modelos                     ║
+      ║                                                                  ║
+      ║  EJEMPLO RÁPIDO:                                                 ║
+      ║  whisper transcribir mi_audio.wav --idioma es                    ║
+      ║                                                                  ║
+      ║  NOTA: Reinicia tu terminal o ejecuta:                           ║
+      ║        source ~/.bashrc                                          ║
+      ║                                                                  ║
+      ╚══════════════════════════════════════════════════════════════════╝

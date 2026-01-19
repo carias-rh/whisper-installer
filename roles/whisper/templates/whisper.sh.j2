@@ -1,0 +1,536 @@
+#!/bin/bash
+# ============================================================================
+# whisper - Wrapper para whisper.cpp con Podman
+# Transcripción de audio a texto usando inteligencia artificial
+# ============================================================================
+# Generado automáticamente por Ansible
+# Imagen: {{ whisper_container_image }}
+# ============================================================================
+
+set -e
+
+# === CONFIGURACIÓN ===
+WHISPER_BASE="{{ whisper_base_dir }}"
+WHISPER_MODELOS="{{ whisper_models_dir }}"
+WHISPER_AUDIO="{{ whisper_audio_dir }}"
+WHISPER_OUTPUT="{{ whisper_output_dir }}"
+WHISPER_IMAGEN="{{ whisper_container_image }}"
+MODELO_DEFECTO="{{ whisper_default_model }}"
+WHISPER_VOLUME_SUFFIX="{{ whisper_podman_volume_suffix }}"
+
+# Colores para la terminal
+ROJO='\033[0;31m'
+VERDE='\033[0;32m'
+AMARILLO='\033[1;33m'
+AZUL='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+BLANCO='\033[1;37m'
+NC='\033[0m' # Sin color
+
+# === FUNCIONES DE UTILIDAD ===
+
+mostrar_banner() {
+    echo -e "${CYAN}"
+    echo "╔═════════════════════════════════════════════════════════════╗"
+    echo "║                                                             ║"
+    echo "║   ██╗    ██╗██╗  ██╗██╗███████╗██████╗ ███████╗██████╗      ║"
+    echo "║   ██║    ██║██║  ██║██║██╔════╝██╔══██╗██╔════╝██╔══██╗     ║"
+    echo "║   ██║ █╗ ██║███████║██║███████╗██████╔╝█████╗  ██████╔╝     ║"
+    echo "║   ██║███╗██║██╔══██║██║╚════██║██╔═══╝ ██╔══╝  ██╔══██╗     ║"
+    echo "║   ╚███╔███╔╝██║  ██║██║███████║██║     ███████╗██║  ██║     ║"
+    echo "║    ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝╚══════╝╚═╝     ╚══════╝╚═╝  ╚═╝     ║"
+    echo "║                                                             ║"
+    echo "║           Transcripción de Audio con IA 🎤➜📝               ║"
+    echo "╚═════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
+
+info() {
+    echo -e "${AZUL}ℹ️  $1${NC}"
+}
+
+exito() {
+    echo -e "${VERDE}✅ $1${NC}"
+}
+
+advertencia() {
+    echo -e "${AMARILLO}⚠️  $1${NC}"
+}
+
+error() {
+    echo -e "${ROJO}❌ $1${NC}"
+    exit 1
+}
+
+verificar_podman() {
+    if ! command -v podman &> /dev/null; then
+        error "Podman no está instalado. Ejecuta el playbook de Ansible primero."
+    fi
+}
+
+# === COMANDOS PRINCIPALES ===
+
+mostrar_ayuda() {
+    mostrar_banner
+    echo -e "${BLANCO}USO:${NC}"
+    echo "    whisper <comando> [opciones]"
+    echo ""
+    echo -e "${BLANCO}COMANDOS DISPONIBLES:${NC}"
+    echo ""
+    echo -e "  ${VERDE}transcribir${NC} <archivo>  Transcribir un archivo de audio"
+    echo -e "  ${VERDE}modelos${NC}                Gestionar modelos de whisper"
+    echo -e "  ${VERDE}idiomas${NC}                Listar idiomas soportados"
+    echo -e "  ${VERDE}estado${NC}                 Verificar estado del sistema"
+    echo -e "  ${VERDE}ayuda${NC}                  Mostrar esta ayuda"
+    echo ""
+    echo -e "${BLANCO}EJEMPLOS:${NC}"
+    echo ""
+    echo "  # Transcribir un archivo de audio"
+    echo -e "  ${CYAN}whisper transcribir mi_audio.wav${NC}"
+    echo ""
+    echo "  # Transcribir especificando idioma español"
+    echo -e "  ${CYAN}whisper transcribir mi_audio.mp3 --idioma es${NC}"
+    echo ""
+    echo "  # Transcribir con modelo más grande (más preciso)"
+    echo -e "  ${CYAN}whisper transcribir mi_audio.wav --modelo medium${NC}"
+    echo ""
+    echo "  # Descargar un modelo específico"
+    echo -e "  ${CYAN}whisper modelos descargar large${NC}"
+    echo ""
+    echo "  # Listar modelos disponibles"
+    echo -e "  ${CYAN}whisper modelos listar${NC}"
+    echo ""
+    echo -e "${BLANCO}MODELOS DISPONIBLES:${NC}"
+    echo "  tiny   - Muy rápido, menor precisión (~75MB)"
+    echo "  base   - Equilibrado (por defecto) (~142MB)"
+    echo "  small  - Buena precisión (~466MB)"
+    echo "  medium - Alta precisión (~1.5GB)"
+    echo "  large  - Máxima precisión (~3GB)"
+    echo ""
+    echo -e "${BLANCO}DIRECTORIOS:${NC}"
+    echo "  Modelos:        $WHISPER_MODELOS"
+    echo "  Audio:          $WHISPER_AUDIO"
+    echo "  Transcripciones: $WHISPER_OUTPUT"
+    echo ""
+}
+
+listar_idiomas() {
+    mostrar_banner
+    echo -e "${BLANCO}IDIOMAS SOPORTADOS:${NC}"
+    echo ""
+    echo "  es - Español        en - Inglés         pt - Portugués"
+    echo "  fr - Francés        de - Alemán         it - Italiano"
+    echo "  nl - Neerlandés     pl - Polaco         ru - Ruso"
+    echo "  zh - Chino          ja - Japonés        ko - Coreano"
+    echo "  ar - Árabe          hi - Hindi          tr - Turco"
+    echo "  vi - Vietnamita     th - Tailandés      el - Griego"
+    echo "  cs - Checo          da - Danés          fi - Finlandés"
+    echo "  hu - Húngaro        no - Noruego        sv - Sueco"
+    echo "  uk - Ucraniano      ca - Catalán        gl - Gallego"
+    echo "  eu - Euskera"
+    echo ""
+    echo -e "${CYAN}Usa --idioma CÓDIGO para especificar el idioma${NC}"
+    echo -e "Ejemplo: ${VERDE}whisper transcribir audio.wav --idioma es${NC}"
+    echo ""
+}
+
+verificar_estado() {
+    mostrar_banner
+    echo -e "${BLANCO}ESTADO DEL SISTEMA:${NC}"
+    echo ""
+    
+    # Verificar Podman
+    echo -n "  Podman: "
+    if command -v podman &> /dev/null; then
+        echo -e "${VERDE}✓ Instalado$(podman --version | head -1 | sed 's/podman version//')${NC}"
+    else
+        echo -e "${ROJO}✗ No instalado${NC}"
+    fi
+    
+    # Verificar imagen
+    echo -n "  Imagen whisper.cpp: "
+    if podman image exists "$WHISPER_IMAGEN" 2>/dev/null; then
+        echo -e "${VERDE}✓ Disponible${NC}"
+    else
+        echo -e "${AMARILLO}⚠ No descargada${NC}"
+    fi
+    
+    # Verificar directorios
+    echo ""
+    echo -e "${BLANCO}DIRECTORIOS:${NC}"
+    for dir in "$WHISPER_MODELOS" "$WHISPER_AUDIO" "$WHISPER_OUTPUT"; do
+        echo -n "  $dir: "
+        if [ -d "$dir" ]; then
+            echo -e "${VERDE}✓${NC}"
+        else
+            echo -e "${ROJO}✗${NC}"
+        fi
+    done
+    
+    # Listar modelos instalados
+    echo ""
+    echo -e "${BLANCO}MODELOS INSTALADOS:${NC}"
+    if [ -d "$WHISPER_MODELOS" ]; then
+        modelos_encontrados=$(find "$WHISPER_MODELOS" -name "ggml-*.bin" 2>/dev/null)
+        if [ -n "$modelos_encontrados" ]; then
+            for modelo in $modelos_encontrados; do
+                nombre=$(basename "$modelo" | sed 's/ggml-//' | sed 's/.bin//')
+                tamano=$(du -h "$modelo" | cut -f1)
+                echo -e "  ${VERDE}✓${NC} $nombre ($tamano)"
+            done
+        else
+            echo -e "  ${AMARILLO}No hay modelos instalados${NC}"
+            echo -e "  Ejecuta: ${CYAN}whisper modelos descargar base${NC}"
+        fi
+    fi
+    echo ""
+}
+
+# === GESTIÓN DE MODELOS ===
+
+gestionar_modelos() {
+    local subcomando="${1:-listar}"
+    shift 2>/dev/null || true
+    
+    case "$subcomando" in
+        listar|lista|ls)
+            listar_modelos
+            ;;
+        descargar|download|bajar)
+            descargar_modelo "$@"
+            ;;
+        eliminar|borrar|rm)
+            eliminar_modelo "$@"
+            ;;
+        *)
+            echo -e "${BLANCO}USO:${NC} whisper modelos <subcomando>"
+            echo ""
+            echo -e "${BLANCO}SUBCOMANDOS:${NC}"
+            echo "  listar           Listar modelos instalados y disponibles"
+            echo "  descargar <nombre>  Descargar un modelo"
+            echo "  eliminar <nombre>   Eliminar un modelo instalado"
+            echo ""
+            ;;
+    esac
+}
+
+listar_modelos() {
+    echo ""
+    echo -e "${BLANCO}MODELOS DISPONIBLES:${NC}"
+    echo ""
+    
+    modelos=("tiny" "tiny.en" "base" "base.en" "small" "small.en" "medium" "medium.en" "large-v1" "large-v2" "large-v3" "large-v3-turbo")
+    
+    for modelo in "${modelos[@]}"; do
+        archivo="$WHISPER_MODELOS/ggml-${modelo}.bin"
+        if [ -f "$archivo" ]; then
+            tamano=$(du -h "$archivo" | cut -f1)
+            echo -e "  ${VERDE}✓${NC} $modelo (instalado - $tamano)"
+        else
+            echo -e "  ${BLANCO}○${NC} $modelo"
+        fi
+    done
+    echo ""
+    echo -e "Para descargar: ${CYAN}whisper modelos descargar <nombre>${NC}"
+    echo ""
+}
+
+descargar_modelo() {
+    local modelo="${1:-$MODELO_DEFECTO}"
+    
+    info "Descargando modelo '$modelo'..."
+    info "Esto puede tardar varios minutos dependiendo de tu conexión."
+    echo ""
+    
+    verificar_podman
+    
+    podman run --rm \
+        -v "$WHISPER_MODELOS:/models${WHISPER_VOLUME_SUFFIX}" \
+        "$WHISPER_IMAGEN" \
+        "./models/download-ggml-model.sh $modelo /models"
+    
+    if [ -f "$WHISPER_MODELOS/ggml-${modelo}.bin" ]; then
+        exito "Modelo '$modelo' descargado correctamente"
+    else
+        error "Error al descargar el modelo '$modelo'"
+    fi
+}
+
+eliminar_modelo() {
+    local modelo="$1"
+    
+    if [ -z "$modelo" ]; then
+        error "Especifica el nombre del modelo a eliminar"
+    fi
+    
+    archivo="$WHISPER_MODELOS/ggml-${modelo}.bin"
+    
+    if [ -f "$archivo" ]; then
+        echo -e "${AMARILLO}¿Estás seguro de eliminar el modelo '$modelo'? [s/N]${NC}"
+        read -r respuesta
+        if [[ "$respuesta" =~ ^[Ss]$ ]]; then
+            rm -f "$archivo"
+            exito "Modelo '$modelo' eliminado"
+        else
+            info "Operación cancelada"
+        fi
+    else
+        error "El modelo '$modelo' no está instalado"
+    fi
+}
+
+# === TRANSCRIPCIÓN ===
+
+transcribir() {
+    local archivo_entrada=""
+    local modelo="$MODELO_DEFECTO"
+    local idioma=""
+    local formato="txt"
+    local archivo_salida=""
+    local opciones_extra=""
+    local traducir=false
+    
+    # Parsear argumentos
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --modelo|-m)
+                modelo="$2"
+                shift 2
+                ;;
+            --idioma|-l)
+                idioma="$2"
+                shift 2
+                ;;
+            --formato|-f)
+                formato="$2"
+                shift 2
+                ;;
+            --salida|-o)
+                archivo_salida="$2"
+                shift 2
+                ;;
+            --traducir|-t)
+                traducir=true
+                shift
+                ;;
+            --cpu|--no-gpu|-ng)
+                opciones_extra="$opciones_extra --no-gpu"
+                shift
+                ;;
+            --timestamps|-ts)
+                opciones_extra="$opciones_extra --print-colors"
+                shift
+                ;;
+            --ayuda|-h)
+                mostrar_ayuda_transcribir
+                return
+                ;;
+            -*)
+                # Pasar opciones desconocidas directamente a whisper-cli
+                opciones_extra="$opciones_extra $1"
+                shift
+                ;;
+            *)
+                if [ -z "$archivo_entrada" ]; then
+                    archivo_entrada="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    # Validaciones
+    if [ -z "$archivo_entrada" ]; then
+        error "Debes especificar un archivo de audio.
+        
+Uso: whisper transcribir <archivo> [opciones]
+
+Ejemplo: whisper transcribir mi_audio.wav --idioma es"
+    fi
+    
+    # Obtener ruta absoluta del archivo
+    if [[ "$archivo_entrada" = /* ]]; then
+        ruta_absoluta="$archivo_entrada"
+    else
+        ruta_absoluta="$(pwd)/$archivo_entrada"
+    fi
+    
+    if [ ! -f "$ruta_absoluta" ]; then
+        error "El archivo '$archivo_entrada' no existe"
+    fi
+    
+    # Verificar modelo
+    archivo_modelo="$WHISPER_MODELOS/ggml-${modelo}.bin"
+    if [ ! -f "$archivo_modelo" ]; then
+        advertencia "El modelo '$modelo' no está instalado"
+        echo -e "${CYAN}¿Deseas descargarlo ahora? [S/n]${NC}"
+        read -r respuesta
+        if [[ ! "$respuesta" =~ ^[Nn]$ ]]; then
+            descargar_modelo "$modelo"
+        else
+            error "Modelo no disponible. Usa 'whisper modelos listar' para ver los instalados."
+        fi
+    elif [ ! -r "$archivo_modelo" ]; then
+        error "El modelo '$modelo' existe pero no es legible: $archivo_modelo"
+    fi
+    
+    # Preparar nombre de salida
+    nombre_base=$(basename "$archivo_entrada" | sed 's/\.[^.]*$//')
+    if [ -z "$archivo_salida" ]; then
+        archivo_salida="$WHISPER_OUTPUT/${nombre_base}"
+    fi
+    
+    # Construir comando
+    local cmd="whisper-cli -m /models/ggml-${modelo}.bin -f /audio/$(basename "$ruta_absoluta")"
+    
+    if [ -n "$idioma" ]; then
+        cmd="$cmd -l $idioma"
+    fi
+    
+    if [ "$traducir" = true ]; then
+        cmd="$cmd -tr"
+    fi
+    
+    # Añadir formato de salida
+    case "$formato" in
+        txt)
+            cmd="$cmd -otxt"
+            ;;
+        srt)
+            cmd="$cmd -osrt"
+            ;;
+        vtt)
+            cmd="$cmd -ovtt"
+            ;;
+        json)
+            cmd="$cmd -oj"
+            ;;
+        lrc)
+            cmd="$cmd -olrc"
+            ;;
+    esac
+    
+    cmd="$cmd -of /output/${nombre_base} $opciones_extra"
+    
+    # Normalizar ubicación del audio para evitar problemas con SELinux
+    directorio_audio=$(dirname "$ruta_absoluta")
+    destino_audio="$WHISPER_AUDIO/$(basename "$ruta_absoluta")"
+
+    if [ "$directorio_audio" != "$WHISPER_AUDIO" ] || [ "$ruta_absoluta" != "$destino_audio" ]; then
+        mkdir -p "$WHISPER_AUDIO"
+        cp -f "$ruta_absoluta" "$destino_audio"
+        ruta_absoluta="$destino_audio"
+        directorio_audio="$WHISPER_AUDIO"
+    fi
+    
+    mostrar_banner
+    info "Transcribiendo: $(basename "$archivo_entrada")"
+    info "Modelo: $modelo"
+    [ -n "$idioma" ] && info "Idioma: $idioma"
+    info "Formato de salida: $formato"
+    echo ""
+    info "Procesando... (esto puede tardar unos minutos)"
+    echo ""
+    
+    verificar_podman
+    
+    # Ejecutar transcripción
+    podman run --rm \
+        -v "$WHISPER_MODELOS:/models${WHISPER_VOLUME_SUFFIX}" \
+        -v "$WHISPER_AUDIO:/audio${WHISPER_VOLUME_SUFFIX}" \
+        -v "$WHISPER_OUTPUT:/output${WHISPER_VOLUME_SUFFIX}" \
+        "$WHISPER_IMAGEN" \
+        "$cmd"
+    
+    echo ""
+    
+    # Verificar resultado
+    extension="$formato"
+    [ "$formato" = "json" ] && extension="json"
+    
+    if [ -f "$WHISPER_OUTPUT/${nombre_base}.${extension}" ]; then
+        exito "¡Transcripción completada!"
+        info "Archivo guardado en: $WHISPER_OUTPUT/${nombre_base}.${extension}"
+        echo ""
+        echo -e "${BLANCO}PRIMERAS LÍNEAS DE LA TRANSCRIPCIÓN:${NC}"
+        echo "─────────────────────────────────────────"
+        head -20 "$WHISPER_OUTPUT/${nombre_base}.${extension}"
+        echo "─────────────────────────────────────────"
+    else
+        # Buscar cualquier archivo generado
+        archivos_generados=$(find "$WHISPER_OUTPUT" -name "${nombre_base}.*" -newer "$ruta_absoluta" 2>/dev/null | head -5)
+        if [ -n "$archivos_generados" ]; then
+            exito "¡Transcripción completada!"
+            info "Archivos generados:"
+            echo "$archivos_generados"
+        else
+            advertencia "La transcripción se ejecutó pero no se encontró el archivo de salida esperado"
+            info "Revisa el directorio: $WHISPER_OUTPUT"
+        fi
+    fi
+}
+
+mostrar_ayuda_transcribir() {
+    echo ""
+    echo -e "${BLANCO}USO:${NC} whisper transcribir <archivo> [opciones]"
+    echo ""
+    echo -e "${BLANCO}OPCIONES:${NC}"
+    echo "  --modelo, -m <nombre>    Modelo a usar (default: $MODELO_DEFECTO)"
+    echo "  --idioma, -l <código>    Idioma del audio (ej: es, en, fr)"
+    echo "  --formato, -f <tipo>     Formato de salida: txt, srt, vtt, json, lrc"
+    echo "  --salida, -o <archivo>   Nombre del archivo de salida"
+    echo "  --traducir, -t           Traducir al inglés"
+    echo "  --cpu, --no-gpu          Usar solo CPU (si la GPU da problemas)"
+    echo "  --timestamps, -ts        Mostrar marcas de tiempo con colores"
+    echo "  --ayuda, -h              Mostrar esta ayuda"
+    echo ""
+    echo -e "${BLANCO}EJEMPLOS:${NC}"
+    echo "  whisper transcribir entrevista.wav"
+    echo "  whisper transcribir podcast.mp3 --idioma es --formato srt"
+    echo "  whisper transcribir audio.wav --modelo large --traducir"
+    echo ""
+}
+
+# === COMANDO PRINCIPAL ===
+
+main() {
+    verificar_podman
+    
+    local comando="${1:-ayuda}"
+    shift 2>/dev/null || true
+    
+    case "$comando" in
+        transcribir|t|trans)
+            transcribir "$@"
+            ;;
+        modelos|modelo|m)
+            gestionar_modelos "$@"
+            ;;
+        idiomas|idioma|i|langs)
+            listar_idiomas
+            ;;
+        estado|status|s)
+            verificar_estado
+            ;;
+        ayuda|help|h|-h|--help)
+            mostrar_ayuda
+            ;;
+        version|v|-v|--version)
+            echo "whisper wrapper v1.0"
+            echo "Imagen: $WHISPER_IMAGEN"
+            ;;
+        *)
+            # Si el primer argumento es un archivo, asumir transcripción
+            if [ -f "$comando" ] || [ -f "$(pwd)/$comando" ]; then
+                transcribir "$comando" "$@"
+            else
+                error "Comando desconocido: $comando
+                
+Usa 'whisper ayuda' para ver los comandos disponibles."
+            fi
+            ;;
+    esac
+}
+
+main "$@"

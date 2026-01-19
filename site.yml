@@ -1,0 +1,52 @@
+---
+# Playbook principal para instalar whisper.cpp con Podman
+# Ejecutar con: ansible-playbook -i inventory.ini site.yml
+
+- name: Instalar whisper.cpp con contenedor Podman
+  hosts: whisper_servers
+  # NO usar become global - solo donde sea necesario
+  
+  vars:
+    # Imagen de contenedor a usar
+    whisper_container_image: "ghcr.io/ggml-org/whisper.cpp:main"
+    
+    # Modelo por defecto a descargar (opciones: tiny, base, small, medium, large)
+    whisper_default_model: "base"
+
+  pre_tasks:
+    - name: Determinar usuario real para la instalación
+      set_fact:
+        whisper_user: >-
+          {{ (ansible_env.SUDO_USER | default('', true)) or
+             (ansible_user_id | default('', true)) or
+             lookup('env', 'USER') }}
+
+    - name: Determinar home del usuario real
+      command: "getent passwd {{ whisper_user }}"
+      register: whisper_user_home_cmd
+      changed_when: false
+
+    - name: Configurar rutas de instalación
+      set_fact:
+        whisper_user_home: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}"
+        whisper_base_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/whisper"
+        whisper_models_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/whisper/modelos"
+        whisper_audio_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/whisper/audio"
+        whisper_output_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/whisper/transcripciones"
+        whisper_bin_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/.local/bin"
+
+    - name: Detectar SELinux con getenforce
+      command: getenforce
+      register: getenforce_result
+      changed_when: false
+      failed_when: false
+
+    - name: Configurar opciones de Podman según SELinux
+      set_fact:
+        # SELinux activo si getenforce devuelve Enforcing o Permissive
+        whisper_selinux_enabled: "{{ (getenforce_result.stdout | default('Disabled') | trim) in ['Enforcing', 'Permissive'] }}"
+        # Usar :z para volúmenes compartidos en SELinux (no :Z que es exclusivo)
+        whisper_podman_volume_suffix: "{{ ':z' if (getenforce_result.stdout | default('Disabled') | trim) in ['Enforcing', 'Permissive'] else '' }}"
+
+  roles:
+    - whisper

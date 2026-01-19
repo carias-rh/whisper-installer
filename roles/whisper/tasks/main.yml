@@ -1,0 +1,226 @@
+---
+# Tareas para instalar whisper.cpp con Podman
+
+- name: Detectar distribución Linux
+  debug:
+    msg: "Sistema detectado: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+# === INSTALACIÓN DE PODMAN (requiere sudo) ===
+
+- name: Instalar Podman en Fedora/RHEL/CentOS
+  become: true
+  dnf:
+    name:
+      - podman
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Instalar Podman en Debian/Ubuntu
+  become: true
+  block:
+    - name: Actualizar cache de apt
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Instalar Podman
+      apt:
+        name:
+          - podman
+        state: present
+  when: ansible_os_family == "Debian"
+
+- name: Instalar Podman en Arch Linux
+  become: true
+  community.general.pacman:
+    name:
+      - podman
+    state: present
+  when: ansible_os_family == "Archlinux"
+
+- name: Instalar Podman en openSUSE
+  become: true
+  community.general.zypper:
+    name:
+      - podman
+    state: present
+  when: ansible_os_family == "Suse"
+
+# === CREAR DIRECTORIOS (usuario normal) ===
+
+- name: Crear directorio base de whisper
+  file:
+    path: "{{ whisper_base_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Crear directorio para modelos
+  file:
+    path: "{{ whisper_models_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Crear directorio para audio
+  file:
+    path: "{{ whisper_audio_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Crear directorio para transcripciones
+  file:
+    path: "{{ whisper_output_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Crear directorio de binarios del usuario
+  file:
+    path: "{{ whisper_bin_dir }}"
+    state: directory
+    mode: '0755'
+
+# Si existen directorios creados con root, corregir ownership
+- name: Asegurar ownership del usuario en directorios de whisper
+  become: true
+  file:
+    path: "{{ whisper_base_dir }}"
+    state: directory
+    owner: "{{ whisper_user }}"
+    group: "{{ whisper_user }}"
+    recurse: true
+
+- name: Asegurar permisos legibles en directorios y modelos
+  become: true
+  command: "chmod -R u+rwX,go+rX {{ whisper_base_dir }}"
+  changed_when: false
+
+# === SELINUX (etiquetas para contenedores) ===
+
+- name: Configurar contexto SELinux para directorios de whisper
+  become: true
+  when: whisper_selinux_enabled | default(false)
+  block:
+    - name: Registrar contexto SELinux para whisper
+      community.general.sefcontext:
+        target: "{{ whisper_base_dir }}(/.*)?"
+        setype: container_file_t
+        state: present
+
+    - name: Limpiar etiquetas MCS de SELinux (evita conflictos entre contenedores)
+      command: "chcon -R -l s0 {{ whisper_base_dir }}"
+      changed_when: false
+
+    - name: Aplicar contexto SELinux a directorios de whisper
+      command: "restorecon -Rv {{ whisper_base_dir }}"
+      register: restorecon_result
+      changed_when: restorecon_result.rc == 0
+
+# === DESCARGAR IMAGEN DE CONTENEDOR (usuario normal, podman rootless) ===
+
+- name: Verificar si la imagen ya existe localmente
+  command: podman image exists "{{ whisper_container_image }}"
+  register: imagen_local
+  changed_when: false
+  failed_when: false
+
+- name: Descargar imagen de whisper.cpp
+  containers.podman.podman_image:
+    name: "{{ whisper_container_image }}"
+    state: present
+  register: image_pull
+  ignore_errors: true
+  when: 
+    - not (whisper_skip_image_pull | default(false))
+    - imagen_local.rc != 0
+
+- name: Descargar imagen con comando alternativo (si el módulo falla)
+  command: podman pull "{{ whisper_container_image }}"
+  when: 
+    - not (whisper_skip_image_pull | default(false))
+    - imagen_local.rc != 0
+    - image_pull is failed
+  changed_when: true
+
+# === INSTALAR SCRIPT WRAPPER (usuario normal) ===
+
+- name: Instalar script wrapper de whisper
+  template:
+    src: whisper.sh.j2
+    dest: "{{ whisper_bin_dir }}/whisper"
+    mode: '0755'
+
+- name: Crear enlace simbólico para whisper-transcribir
+  file:
+    src: "{{ whisper_bin_dir }}/whisper"
+    dest: "{{ whisper_bin_dir }}/whisper-transcribir"
+    state: link
+
+# === DESCARGAR MODELO POR DEFECTO (usuario normal) ===
+
+- name: Verificar si el modelo por defecto ya existe
+  stat:
+    path: "{{ whisper_models_dir }}/ggml-{{ whisper_default_model }}.bin"
+  register: modelo_existe
+
+- name: Descargar modelo por defecto ({{ whisper_default_model }})
+  command: >
+    podman run --rm
+    -v {{ whisper_models_dir }}:/models{{ whisper_podman_volume_suffix }}
+    {{ whisper_container_image }}
+    "./models/download-ggml-model.sh {{ whisper_default_model }} /models"
+  when: not modelo_existe.stat.exists
+  register: descarga_modelo
+  changed_when: descarga_modelo.rc == 0
+
+# === CONFIGURAR PATH (usuario normal) ===
+
+- name: Verificar si PATH ya incluye .local/bin en .bashrc
+  shell: grep -q '\.local/bin' {{ whisper_user_home }}/.bashrc
+  register: path_check
+  ignore_errors: true
+  changed_when: false
+
+- name: Añadir .local/bin al PATH en .bashrc
+  lineinfile:
+    path: "{{ whisper_user_home }}/.bashrc"
+    line: 'export PATH="$HOME/.local/bin:$PATH"'
+    create: yes
+  when: path_check.rc != 0
+
+- name: Verificar si .zshrc existe
+  stat:
+    path: "{{ whisper_user_home }}/.zshrc"
+  register: zshrc_exists
+
+- name: Añadir .local/bin al PATH en .zshrc si existe
+  lineinfile:
+    path: "{{ whisper_user_home }}/.zshrc"
+    line: 'export PATH="$HOME/.local/bin:$PATH"'
+  when: zshrc_exists.stat.exists
+
+# === MENSAJE FINAL ===
+
+- name: Mostrar instrucciones de uso
+  debug:
+    msg: |
+      
+      ╔══════════════════════════════════════════════════════════════════╗
+      ║         ¡whisper.cpp instalado correctamente! 🎉                 ║
+      ╠══════════════════════════════════════════════════════════════════╣
+      ║                                                                  ║
+      ║  UBICACIONES:                                                    ║
+      ║  • Modelos:        {{ whisper_models_dir }}
+      ║  • Audio:          {{ whisper_audio_dir }}
+      ║  • Transcripciones: {{ whisper_output_dir }}
+      ║                                                                  ║
+      ║  COMANDOS DISPONIBLES:                                           ║
+      ║  • whisper ayuda         - Ver ayuda completa                    ║
+      ║  • whisper transcribir   - Transcribir un archivo de audio       ║
+      ║  • whisper modelos       - Gestionar modelos                     ║
+      ║                                                                  ║
+      ║  EJEMPLO RÁPIDO:                                                 ║
+      ║  whisper transcribir mi_audio.wav                                ║
+      ║                                                                  ║
+      ║  NOTA: Reinicia tu terminal o ejecuta:                           ║
+      ║        source ~/.bashrc                                          ║
+      ║                                                                  ║
+      ╚══════════════════════════════════════════════════════════════════╝

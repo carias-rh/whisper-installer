@@ -1,0 +1,49 @@
+---
+# Playbook para compilar e instalar whisper.cpp desde código fuente
+# Usar cuando: CPU sin AVX, preferencia por instalación nativa, etc.
+# Ejecutar con: ansible-playbook -i inventory.ini build-site.yml
+
+- name: Compilar e instalar whisper.cpp (versión nativa)
+  hosts: whisper_servers
+  # NO usar become global - solo donde sea necesario
+  
+  vars:
+    # Imagen de contenedor (no se usa en este modo, pero se mantiene por compatibilidad)
+    whisper_container_image: "ghcr.io/ggml-org/whisper.cpp:main"
+    
+    # Modelo por defecto a descargar (opciones: tiny, base, small, medium, large)
+    whisper_default_model: "base"
+    
+    # Modo offline (usar archivos locales en vez de descargar)
+    whisper_offline_mode: "{{ lookup('env', 'WHISPER_OFFLINE') | default(false, true) }}"
+    
+    # Rutas para modo offline (se configuran desde build-install.sh)
+    whisper_offline_source: "{{ lookup('env', 'WHISPER_OFFLINE_SOURCE') | default('', true) }}"
+    whisper_offline_model: "{{ lookup('env', 'WHISPER_OFFLINE_MODEL') | default('', true) }}"
+
+  pre_tasks:
+    - name: Determinar usuario real para la instalación
+      set_fact:
+        whisper_user: >-
+          {{ (ansible_env.SUDO_USER | default('', true)) or
+             (ansible_user_id | default('', true)) or
+             lookup('env', 'USER') }}
+
+    - name: Determinar home del usuario real
+      command: "getent passwd {{ whisper_user }}"
+      register: whisper_user_home_cmd
+      changed_when: false
+
+    - name: Configurar rutas de instalación
+      set_fact:
+        whisper_user_home: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}"
+        whisper_base_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/whisper"
+        whisper_models_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/whisper/modelos"
+        whisper_audio_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/whisper/audio"
+        whisper_output_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/whisper/transcripciones"
+        whisper_bin_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/.local/bin"
+        whisper_source_dir: "{{ (whisper_user_home_cmd.stdout | trim).split(':')[5] }}/whisper.cpp"
+
+  tasks:
+    - name: Incluir tareas de compilación
+      include_tasks: roles/whisper/tasks/build.yml
