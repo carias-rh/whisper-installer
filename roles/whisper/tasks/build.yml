@@ -90,6 +90,21 @@
     state: directory
     mode: '0755'
 
+# Si existen directorios creados con root, corregir ownership
+- name: Asegurar ownership del usuario en directorios de whisper
+  become: true
+  file:
+    path: "{{ whisper_base_dir }}"
+    state: directory
+    owner: "{{ whisper_user }}"
+    group: "{{ whisper_user }}"
+    recurse: true
+
+- name: Asegurar permisos de escritura en directorios de whisper
+  become: true
+  command: "chmod -R u+rwX,go+rX {{ whisper_base_dir }}"
+  changed_when: false
+
 # === CLONAR O ACTUALIZAR REPOSITORIO ===
 
 - name: Verificar si ya existe el repositorio
