@@ -181,7 +181,7 @@
 
 - name: Instalar script wrapper de whisper (versión nativa)
   template:
-    src: whisper-native.sh.j2
+    src: "{{ playbook_dir }}/roles/whisper/templates/whisper-native.sh.j2"
     dest: "{{ whisper_bin_dir }}/whisper"
     mode: '0755'
 
