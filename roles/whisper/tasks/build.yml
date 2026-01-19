@@ -99,7 +99,7 @@
 
 - name: Clonar repositorio whisper.cpp
   git:
-    repo: "https://github.com/ggml-org/whisper.cpp.git"
+    repo: "https://github.com/ggerganov/whisper.cpp.git"
     dest: "{{ whisper_source_dir }}"
     version: master
     depth: 1
