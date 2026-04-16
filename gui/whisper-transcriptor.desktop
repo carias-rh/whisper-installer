@@ -1,0 +1,16 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Whisper Transcriptor
+Name[es]=Whisper Transcriptor
+GenericName=Audio Transcription
+GenericName[es]=Transcripción de Audio
+Comment=Transcribe audio to text using AI
+Comment[es]=Transcribe audio a texto usando inteligencia artificial
+Exec=whisper-gui
+Icon=whisper-transcriptor
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+Keywords=audio;transcription;speech;text;whisper;ia;ai;
+StartupWMClass=whisper-gui
+StartupNotify=true

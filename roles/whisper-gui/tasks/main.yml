@@ -1,0 +1,172 @@
+---
+# Tareas para instalar la interfaz gráfica de Whisper
+
+- name: Detectar distribución Linux
+  debug:
+    msg: "Instalando GUI en: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+# === INSTALAR DEPENDENCIAS DEL SISTEMA ===
+
+- name: Verificar si ffmpeg ya está disponible
+  command: which ffmpeg
+  register: ffmpeg_check
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family == "RedHat"
+
+- name: Instalar dependencias en Fedora/RHEL/CentOS (sin ffmpeg)
+  become: true
+  dnf:
+    name:
+      - python3
+      - python3-gobject
+      - gtk3
+      - xdg-utils
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Instalar ffmpeg-free en Fedora si no hay ffmpeg
+  become: true
+  dnf:
+    name:
+      - ffmpeg-free
+    state: present
+  when: 
+    - ansible_os_family == "RedHat"
+    - ffmpeg_check.rc != 0
+
+- name: Instalar dependencias en Debian/Ubuntu
+  become: true
+  block:
+    - name: Actualizar cache de apt
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Instalar dependencias GTK y ffmpeg
+      apt:
+        name:
+          - python3
+          - python3-gi
+          - python3-gi-cairo
+          - gir1.2-gtk-3.0
+          - ffmpeg
+          - xdg-utils
+        state: present
+  when: ansible_os_family == "Debian"
+
+- name: Instalar dependencias en Arch Linux
+  become: true
+  community.general.pacman:
+    name:
+      - python
+      - python-gobject
+      - gtk3
+      - ffmpeg
+      - xdg-utils
+    state: present
+  when: ansible_os_family == "Archlinux"
+
+- name: Instalar dependencias en openSUSE
+  become: true
+  community.general.zypper:
+    name:
+      - python3
+      - python3-gobject
+      - python3-gobject-Gdk
+      - gtk3
+      - ffmpeg
+      - xdg-utils
+    state: present
+  when: ansible_os_family == "Suse"
+
+# === INSTALAR APLICACIÓN GUI ===
+
+- name: Crear directorio para la aplicación
+  file:
+    path: "{{ whisper_gui_install_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Copiar script de la GUI
+  copy:
+    src: "{{ playbook_dir }}/gui/whisper_gui.py"
+    dest: "{{ whisper_gui_install_dir }}/whisper_gui.py"
+    mode: '0755'
+
+- name: Crear script lanzador en .local/bin
+  copy:
+    content: |
+      #!/bin/bash
+      exec python3 "{{ whisper_gui_install_dir }}/whisper_gui.py" "$@"
+    dest: "{{ whisper_bin_dir }}/whisper-gui"
+    mode: '0755'
+
+# === INSTALAR ARCHIVO .DESKTOP E ICONO ===
+
+- name: Crear directorio de aplicaciones del usuario
+  file:
+    path: "{{ whisper_user_home }}/.local/share/applications"
+    state: directory
+    mode: '0755'
+
+- name: Crear directorio de iconos del usuario
+  file:
+    path: "{{ whisper_user_home }}/.local/share/icons/hicolor/scalable/apps"
+    state: directory
+    mode: '0755'
+
+- name: Copiar archivo .desktop
+  copy:
+    src: "{{ playbook_dir }}/gui/whisper-transcriptor.desktop"
+    dest: "{{ whisper_user_home }}/.local/share/applications/whisper-transcriptor.desktop"
+    mode: '0644'
+
+- name: Actualizar Exec en .desktop para usar ruta completa
+  lineinfile:
+    path: "{{ whisper_user_home }}/.local/share/applications/whisper-transcriptor.desktop"
+    regexp: '^Exec='
+    line: "Exec={{ whisper_bin_dir }}/whisper-gui"
+
+- name: Copiar icono SVG
+  copy:
+    src: "{{ playbook_dir }}/gui/whisper-transcriptor.svg"
+    dest: "{{ whisper_user_home }}/.local/share/icons/hicolor/scalable/apps/whisper-transcriptor.svg"
+    mode: '0644'
+
+- name: Actualizar cache de iconos
+  command: gtk-update-icon-cache -f -t "{{ whisper_user_home }}/.local/share/icons/hicolor"
+  changed_when: false
+  ignore_errors: true
+
+- name: Actualizar base de datos de aplicaciones de escritorio
+  command: update-desktop-database "{{ whisper_user_home }}/.local/share/applications"
+  changed_when: false
+  ignore_errors: true
+
+# === MENSAJE FINAL ===
+
+- name: Mostrar instrucciones de la GUI
+  debug:
+    msg: |
+      
+      ╔══════════════════════════════════════════════════════════════════╗
+      ║      ¡Interfaz gráfica de Whisper instalada! 🎨                  ║
+      ╠══════════════════════════════════════════════════════════════════╣
+      ║                                                                  ║
+      ║  FORMAS DE ABRIR LA APLICACIÓN:                                  ║
+      ║                                                                  ║
+      ║  1. Desde el menú de aplicaciones:                               ║
+      ║     Busca "Whisper Transcriptor"                                 ║
+      ║                                                                  ║
+      ║  2. Desde la terminal:                                           ║
+      ║     whisper-gui                                                  ║
+      ║                                                                  ║
+      ║  CARACTERÍSTICAS:                                                ║
+      ║  • Selecciona cualquier archivo de audio                         ║
+      ║  • Conversión automática a WAV                                   ║
+      ║  • Elige idioma (español por defecto)                            ║
+      ║  • Múltiples modelos de IA disponibles                           ║
+      ║  • Exporta a TXT, SRT o VTT                                      ║
+      ║                                                                  ║
+      ╚══════════════════════════════════════════════════════════════════╝

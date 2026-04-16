@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3584e4"/>
+      <stop offset="100%" style="stop-color:#1c71d8"/>
+    </linearGradient>
+    <linearGradient id="micGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#e8e8e8"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="url(#bgGradient)"/>
+  <circle cx="64" cy="64" r="56" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
+  
+  <!-- Microphone body -->
+  <rect x="50" y="28" width="28" height="44" rx="14" fill="url(#micGradient)"/>
+  
+  <!-- Microphone grille lines -->
+  <line x1="54" y1="40" x2="74" y2="40" stroke="#1c71d8" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  <line x1="54" y1="48" x2="74" y2="48" stroke="#1c71d8" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  <line x1="54" y1="56" x2="74" y2="56" stroke="#1c71d8" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  
+  <!-- Microphone stand -->
+  <path d="M40 62 Q40 84 64 84 Q88 84 88 62" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <line x1="64" y1="84" x2="64" y2="98" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <line x1="50" y1="98" x2="78" y2="98" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  
+  <!-- Sound waves -->
+  <path d="M30 50 Q22 64 30 78" fill="none" stroke="#2ec27e" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+  <path d="M20 42 Q8 64 20 86" fill="none" stroke="#2ec27e" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  
+  <path d="M98 50 Q106 64 98 78" fill="none" stroke="#2ec27e" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+  <path d="M108 42 Q120 64 108 86" fill="none" stroke="#2ec27e" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+</svg>

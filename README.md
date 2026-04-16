@@ -2,10 +2,38 @@
 
 Este instalador configura automáticamente **whisper.cpp** en cualquier sistema Linux. Incluye un script wrapper en español que simplifica enormemente el uso.
 
-## 🔧 Dos Modos de Instalación
+## 🖥️ NUEVO: Interfaz Gráfica
+
+¿No te gusta la terminal? ¡Ahora puedes usar Whisper con una interfaz gráfica moderna y sencilla!
+
+![Whisper GUI](gui/whisper-transcriptor.svg)
+
+### Instalación Rápida de la GUI
+
+```bash
+./instalar-gui.sh
+```
+
+### Características de la GUI
+
+- **Fácil de usar**: Solo selecciona tu archivo y haz clic en "Transcribir"
+- **Conversión automática**: Acepta MP3, M4A, OGG, FLAC y más (se convierte a WAV automáticamente)
+- **Español por defecto**: Configurado para transcribir en español
+- **Múltiples idiomas**: Soporte para 25+ idiomas
+- **Varios formatos de salida**: TXT, SRT (subtítulos), VTT
+
+### Cómo abrir la GUI
+
+1. **Desde el menú de aplicaciones**: Busca "Whisper Transcriptor"
+2. **Desde la terminal**: `whisper-gui`
+
+---
+
+## 🔧 Instalación por Terminal (Modo Tradicional)
 
 | Modo | Comando | Cuándo usar |
 |------|---------|-------------|
+| **GUI** | `./instalar-gui.sh` | Usuarios que prefieren interfaz gráfica |
 | **Contenedor** | `./instalar.sh` | CPUs modernos con AVX (la mayoría) |
 | **Compilación** | `./build-install.sh` | CPUs sin AVX (Celeron, Atom antiguos) |
 
@@ -246,6 +274,37 @@ ffmpeg -i mi_audio.mp3 -ar 16000 -ac 1 mi_audio.wav
 | `vtt` | .vtt | WebVTT (para web) |
 | `json` | .json | Datos estructurados |
 | `lrc` | .lrc | Letras sincronizadas |
+
+## 🖥️ Uso de la Interfaz Gráfica
+
+### Pasos para transcribir con la GUI
+
+1. **Abre la aplicación** desde el menú o con `whisper-gui`
+2. **Selecciona tu archivo de audio** (cualquier formato: MP3, WAV, M4A, etc.)
+3. **Elige el idioma** del audio (español por defecto)
+4. **Selecciona el modelo** (base es suficiente para la mayoría de casos)
+5. **Haz clic en "Iniciar Transcripción"**
+6. **¡Listo!** El texto aparecerá y se guardará en `~/whisper/transcripciones/`
+
+### Solución de Problemas de la GUI
+
+#### La aplicación no aparece en el menú
+Cierra sesión y vuelve a entrar, o ejecuta:
+```bash
+update-desktop-database ~/.local/share/applications
+```
+
+#### Error "whisper: command not found"
+Asegúrate de que instalaste también whisper.cpp:
+```bash
+./instalar-gui.sh  # Instala todo junto
+```
+
+#### Error al convertir audio
+Verifica que ffmpeg esté instalado:
+```bash
+ffmpeg -version
+```
 
 ## 🤝 Contribuir
 
