@@ -592,9 +592,14 @@ class WhisperWindow(Gtk.ApplicationWindow):
                 
                 GLib.idle_add(self.append_output, "✅ Audio convertido correctamente\n\n")
             else:
-                # Copiar archivo WAV al directorio de trabajo
-                shutil.copy2(input_file, wav_file)
-                GLib.idle_add(self.append_output, "✅ Archivo WAV copiado\n\n")
+                # Copiar archivo WAV al directorio de trabajo (si no es el mismo archivo)
+                input_resolved = Path(input_file).resolve()
+                wav_resolved = wav_file.resolve()
+                if input_resolved != wav_resolved:
+                    shutil.copy2(input_file, wav_file)
+                    GLib.idle_add(self.append_output, "✅ Archivo WAV copiado\n\n")
+                else:
+                    GLib.idle_add(self.append_output, "✅ Archivo WAV listo\n\n")
             
             # Buscar el comando whisper en varias ubicaciones
             whisper_bin = None
