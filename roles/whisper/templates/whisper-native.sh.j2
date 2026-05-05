@@ -293,6 +293,7 @@ transcribir() {
     local archivo_salida=""
     local opciones_extra=""
     local traducir=false
+    local no_contexto=true
     
     # Parsear argumentos
     while [[ $# -gt 0 ]]; do
@@ -317,6 +318,10 @@ transcribir() {
                 traducir=true
                 shift
                 ;;
+            --con-contexto)
+                no_contexto=false
+                shift
+                ;;
             --cpu|--no-gpu|-ng)
                 opciones_extra="$opciones_extra --no-gpu"
                 shift
@@ -330,7 +335,6 @@ transcribir() {
                 return
                 ;;
             -*)
-                # Pasar opciones desconocidas directamente a whisper-cli
                 opciones_extra="$opciones_extra $1"
                 shift
                 ;;
@@ -395,6 +399,10 @@ Ejemplo: whisper transcribir mi_audio.wav --idioma es"
     
     if [ "$traducir" = true ]; then
         cmd="$cmd -tr"
+    fi
+    
+    if [ "$no_contexto" = true ]; then
+        cmd="$cmd -mc 0"
     fi
     
     # Añadir formato de salida
@@ -470,6 +478,7 @@ mostrar_ayuda_transcribir() {
     echo "  --formato, -f <tipo>     Formato de salida: txt, srt, vtt, json, lrc"
     echo "  --salida, -o <archivo>   Nombre del archivo de salida"
     echo "  --traducir, -t           Traducir al inglés"
+    echo "  --con-contexto           Usar contexto previo (puede causar bucles)"
     echo "  --cpu, --no-gpu          Usar solo CPU (desactivar GPU)"
     echo "  --timestamps, -ts        Mostrar marcas de tiempo con colores"
     echo "  --ayuda, -h              Mostrar esta ayuda"
